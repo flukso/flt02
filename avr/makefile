@@ -230,6 +230,7 @@ LDFLAGS += $(EXTMEMOPTS)
 # to get a full listing.
 #
 AVRDUDE_PROGRAMMER = usbtiny
+AVRDUDE_PROGRAMMER_R = gpio
 
 # com1 = serial port. Use lpt1 to connect to parallel port.
 AVRDUDE_PORT = /dev/ttyUSB*    # programmer connected to serial device
@@ -256,6 +257,11 @@ AVRDUDE_FLAGS = -p $(MCU) -P $(AVRDUDE_PORT) -c $(AVRDUDE_PROGRAMMER)
 AVRDUDE_FLAGS += $(AVRDUDE_NO_VERIFY)
 AVRDUDE_FLAGS += $(AVRDUDE_VERBOSE)
 AVRDUDE_FLAGS += $(AVRDUDE_ERASE_COUNTER)
+
+AVRDUDE_FLAGS_R = -p $(MCU) -c $(AVRDUDE_PROGRAMMER_R)
+AVRDUDE_FLAGS_R += $(AVRDUDE_NO_VERIFY)
+AVRDUDE_FLAGS_R += $(AVRDUDE_VERBOSE)
+AVRDUDE_FLAGS_R += $(AVRDUDE_ERASE_COUNTER)
 
 #---------------- Debugging Options ----------------
 
@@ -394,7 +400,21 @@ gccversion :
 program: $(TARGET).hex $(TARGET).eep
 	$(AVRDUDE) $(AVRDUDE_FLAGS) $(AVRDUDE_WRITE_FUSES) $(AVRDUDE_WRITE_FLASH) $(AVRDUDE_WRITE_EEPROM)
 
+# Program the device remotely.
+HOST = 192.168.255.1
+FLUKSO = /etc/init.d/flukso
 
+rprogram: $(TARGET).hex $(TARGET).eep
+	@scp $(TARGET).hex $(TARGET).eep root@$(HOST):/tmp
+	@ssh root@$(HOST) \
+	"echo +++ stopping the flukso daemon +++;" \
+	"$(FLUKSO) stop;" \
+	"cd /tmp;" \
+	"$(AVRDUDE_R) $(AVRDUDE_FLAGS_R) $(AVRDUDE_WRITE_FUSES) $(AVRDUDE_WRITE_FLASH) $(AVRDUDE_WRITE_EEPROM);" \
+	"sleep 1;" \
+	"echo;" \
+	"echo +++ starting the flukso daemon +++;" \
+	"$(FLUKSO) start <&- 2>&- >/dev/null"
 
 # Generate avr-gdb config/init file which does the following:
 #     define the reset signal, load the target file, connect to target, and set 
