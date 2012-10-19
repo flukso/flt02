@@ -4,6 +4,7 @@
 
 #include "rfm12.h"
 #include "pkt.h"
+#include "dbg.h"
 
 static pkt_1_t pkt_counter = {
 	.head = {
@@ -13,9 +14,9 @@ static pkt_1_t pkt_counter = {
 		.typ = PKT_1_TYP
 	},
 
-	.sid = 1,
-	.count = 2,
-	.msec = 3
+	.sid = 0,
+	.count = 0,
+	.msec = 0
 };
 
 static int send(uint8_t *pkt, uint8_t size)
@@ -37,12 +38,32 @@ static int send(uint8_t *pkt, uint8_t size)
 	return 0;
 }
 
+static inline void timer0_init(void)
+{
+	//timer1 prescaler set to 64 giving us a base freq of 125kHz
+	TCCR0B |= (1<<CS01) | (1<<CS00);
+	//decrease timer freq to 1kHz
+	OCR0A = 0xf9;
+	//set timer0 to CTC mode
+	TCCR0A |= 1<<WGM01;
+	//enable output compare match A interrupt
+	TIMSK0 |= 1<<OCIE0A;
+
+	DBG_OC0A_TOGGLE();
+}
+
+ISR(TIMER0_COMPA_vect)
+{
+}
+
 int main(void)
 {
 	cli();
 	_delay_ms(10);
 
+	timer0_init();
 	rfm12_init();
+
 	// the clk/8 fuse bit is set
 	clock_prescale_set(clock_div_1);
 	sei();
