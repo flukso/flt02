@@ -15,6 +15,6 @@ typedef struct {
 typedef struct {
 	pkt_head_t head;
 	uint8_t sid; //local sensor id
-	uint32_t count;
+	uint32_t count; //in mWh
 	uint32_t msec;
 } pkt_1_t;
