@@ -1,4 +1,5 @@
 #include <stdbool.h>
+#include <string.h>
 #include <avr/interrupt.h>
 #include <avr/power.h>
 #include <util/delay.h>
@@ -11,8 +12,14 @@
 #define SECOND 1000 //msec
 
 static uint32_t msec;
-static bool pkt_counter_send = false;
 
+static uint8_t pkt_length[3] = {
+	0,
+	PKT_1_LEN + PACKET_OVERHEAD,
+	PKT_2_LEN + PACKET_OVERHEAD
+};
+
+static bool pkt_counter_tx = false;
 static pkt_1_t pkt_counter = {
 	.head = {
 		.grp = PKT_GRP, //hardcoded for the time being
@@ -25,6 +32,9 @@ static pkt_1_t pkt_counter = {
 	.count = 0,
 	.msec = 0
 };
+
+static bool pkt_relay_rx = false;
+static pkt_2_t pkt_relay;
 
 static int send(uint8_t *pkt, uint8_t size)
 {
@@ -75,6 +85,15 @@ static inline void s0_init(void)
 	PCICR |= (1<<PCIE1);
 }
 
+static inline void relay_init(void)
+{
+	//PC0 output low = relay ON
+	PORTC &= ~(1<<PC0);
+	//set REL = PC0 as output pin
+	DDRC |= (1<<DDC0);
+
+}
+
 static inline uint32_t diff(uint32_t new, uint32_t old)
 {
 	return new < old ? (0xFFFFFFFF - old) + new + 1 : new - old;
@@ -87,7 +106,7 @@ ISR(PCINT1_vect)
 		return;
 
 	if (diff(msec, pkt_counter.msec) >= SECOND) {
-		pkt_counter_send = true;
+		pkt_counter_tx = true;
 	}
 
 	pkt_counter.count += METERCONST;
@@ -102,16 +121,41 @@ int main(void)
 	rfm12_init();
 	timer0_init();
 	s0_init();
+	relay_init();
 
 	// the clk/8 fuse bit is set
 	clock_prescale_set(clock_div_1);
 	sei();
 
 	while (1) {
-		if (pkt_counter_send && !send((uint8_t *) &pkt_counter, sizeof(pkt_counter))) {
+		if (pkt_counter_tx && !send((uint8_t *) &pkt_counter, sizeof(pkt_counter))) {
 			//clear when pkt is in tx buffer
 			//if not, the tx buffer is still occupied, so try again later
-			pkt_counter_send = false;
+			pkt_counter_tx = false;
+		}
+
+		if (rfm12_rx_status() == STATUS_COMPLETE) {
+			if (rfm12_rx_len() == pkt_length[rfm12_rx_typ()]) { //pkt sanity checking
+				switch (rfm12_rx_typ()) {
+					case PKT_2_TYP:
+						memcpy((void *) &pkt_relay, (const void *) rfm12_rx_buffer(), (size_t) rfm12_rx_len() - 2); //no CRC16
+						pkt_relay_rx = true;
+						break;
+				}
+			}
+
+			rfm12_rx_clear();						
+		}
+
+		if (pkt_relay_rx) {
+			//hexaplug relay is NC!
+			if (pkt_relay.state & PKT_AID0) {
+				PORTC &= ~(1<<PC0);
+			} else {
+				PORTC |= (1<<PC0);
+			}
+
+			pkt_relay_rx = false;
 		}
 
 		rfm12_tick();
